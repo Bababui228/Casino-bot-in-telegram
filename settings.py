@@ -10,3 +10,7 @@ deck = {
 
 
 USER_DATA_FILE = "users.json"
+
+
+BONUS_AMOUNT = 500
+BONUS_TIME_FORMAT = "%Y-%m-%d"

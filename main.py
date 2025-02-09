@@ -1,6 +1,11 @@
-from settings import deck, USER_DATA_FILE
+import threading
+
+from settings import deck, USER_DATA_FILE, BONUS_AMOUNT, BONUS_TIME_FORMAT
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
+from flask import Flask
+import datetime
+# from datetime import timedelta
 import telebot
 import random
 import json
@@ -12,10 +17,26 @@ load_dotenv("token.env")
 TOKEN = os.getenv("TOKEN")
 
 if not TOKEN:
-    print("❌ Не вдалося завантажити TOKEN!")
+    print("❌ Failed to load TOKEN!")
     exit(1)
 else:
     bot = telebot.TeleBot(TOKEN)
+
+
+# Create a Flask app for web server
+app = Flask(__name__)
+
+
+@app.route('/')
+def home():
+    # Simple route to check if the web service running
+    return "Bot is running!"
+
+
+# Function to run the bot
+def run_bot():
+    # Starts polling for messages
+    bot.polling(none_stop=True, timeout=60)
 
 
 # Store game states
@@ -42,6 +63,14 @@ def is_registered(user_id):
     return str(user_id) in users
 
 
+# Check balance command
+@bot.message_handler(commands=['balance'])
+def check_balance(message):
+    user_id = str(message.chat.id)
+    users = load_users()
+    bot.send_message(user_id, f"💰 Your balance: **${users[user_id]['balance']}**")
+
+
 # Register a new user
 @bot.message_handler(commands=['start'])
 def register_user(message):
@@ -49,7 +78,8 @@ def register_user(message):
     users = load_users()
 
     if user_id in users:
-        bot.send_message(message.chat.id, f"👋 Welcome back, {users[user_id]['username']}!\n Your balance: 💰 {users[user_id]['balance']} $.\n/play")
+        bot.send_message(message.chat.id, f"👋 Welcome back, {users[user_id]['username']}!"
+                                          f"\n Your balance: 💰 {users[user_id]['balance']} $.\n/play")
 
     else:
         users[user_id] = {
@@ -57,7 +87,8 @@ def register_user(message):
             "balance": 1000  # Starting balance
         }
         save_users(users)
-        bot.send_message(message.chat.id, f"✅ Registration successful!\n🎰 Welcome, {users[user_id]['username']}!\n💰 You start with **1000 $**.\n/play")
+        bot.send_message(message.chat.id, f"✅ Registration successful!\n🎰 Welcome, {users[user_id]['username']}!"
+                                          f"\n💰 You start with **1000 $**.\n/play")
 
 
 # Show user balance
@@ -76,6 +107,37 @@ def check_balance(message):
 @bot.message_handler(commands=['play'])
 def play(message):
     bot.send_message(message.chat.id, "Choose a game: \n🎲 /dice, \n🎰 /roulette, \n🃏 /blackjack")
+
+
+@bot.message_handler(commands=['bonus'])
+def give_daily_bonus(message):
+    user_id = str(message.chat.id)
+    users = load_users()
+
+    if user_id not in users:
+        bot.send_message(message.chat.id, "⚠ You are not registered. Type /start to sign up!")
+        return
+
+    last_bonus_date_str = users[user_id].get("last_bonus", "")
+    if last_bonus_date_str:
+        last_bonus_date = datetime.datetime.strptime(last_bonus_date_str, BONUS_TIME_FORMAT)
+    else:
+        last_bonus_date = None
+    current_date = datetime.datetime.now()
+
+    # Check if the user has already received the bonus today
+    if last_bonus_date and last_bonus_date.date() == current_date.date():
+        bot.send_message(message.chat.id, "❌ You have already received your daily bonus today!"
+                                          "\n Come back tomorrow for a new one.")
+        return
+
+    # Give the daily bonus
+    users[user_id]["balance"] += BONUS_AMOUNT
+    users[user_id]["last_bonus"] = current_date.strftime(BONUS_TIME_FORMAT)  # Update last bonus date
+
+    save_users(users)
+    bot.send_message(message.chat.id, f"🎉 You have received your daily bonus of **{BONUS_AMOUNT}$**!\n"
+                                      f"💰 Your new balance: **{users[user_id]['balance']}$**.")
 
 
 @bot.message_handler(commands=['dice'])
@@ -129,10 +191,12 @@ def roll_dice(call):
     if chosen_number == rolled_number:
         winnings = bet_amount * 6
         users[user_id]["balance"] += winnings
-        bot.send_message(user_id, f"🏆 You won **${winnings}**! 🎉\n💰 New balance: **${users[user_id]['balance']}**\n /dice")
+        bot.send_message(user_id, f"🏆 You won **${winnings}**! 🎉"
+                                  f"\n💰 New balance: **${users[user_id]['balance']}**\n /dice")
     else:
         users[user_id]["balance"] -= bet_amount
-        bot.send_message(user_id, f"💔 You lost **${bet_amount}**.\n💰 New balance: **${users[user_id]['balance']}**\n /dice")
+        bot.send_message(user_id, f"💔 You lost **${bet_amount}**."
+                                  f"\n💰 New balance: **${users[user_id]['balance']}**\n /dice")
 
     save_users(users)
 
@@ -244,7 +308,8 @@ def roll_roulette(user_id):
         if winning_number == 0:  # Zero case (house wins)
             users[user_id]["balance"] -= bet_amount
             bot.send_message(user_id,
-                             f"💔 The wheel landed on **0 (GREEN)**, house wins!\n💰 New balance: **${users[user_id]['balance']}**")
+                             f"💔 The wheel landed on **0 (GREEN)**, house wins!"
+                             f"\n💰 New balance: **${users[user_id]['balance']}**")
         elif chosen_bet == winning_color:
             winnings = bet_amount * 2
             users[user_id]["balance"] += winnings
@@ -254,14 +319,6 @@ def roll_roulette(user_id):
             bot.send_message(user_id, f"💔 You lost **${bet_amount}**.\n💰 New balance: **${users[user_id]['balance']}**")
 
     save_users(users)
-
-
-# Check balance command
-@bot.message_handler(commands=['balance'])
-def check_balance(message):
-    user_id = str(message.chat.id)
-    users = load_users()
-    bot.send_message(user_id, f"💰 Your balance: **${users[user_id]['balance']}**")
 
 
 def draw_card():
@@ -398,4 +455,9 @@ def dealer_turn(user_id):
     bot.send_message(user_id, result)
 
 
-bot.polling()
+if __name__ == "__main__":
+    # Start Flask app in a separate thread (runs concurrently with the bot)
+    threading.Thread(target=app.run, kwargs={"host": "0.0.0.0", "port": int(os.environ.get("PORT", 5000))}).start()
+
+    # Start the Telegram bot
+    run_bot()
