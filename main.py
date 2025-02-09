@@ -1,5 +1,3 @@
-import threading
-
 from settings import deck, USER_DATA_FILE, BONUS_AMOUNT, BONUS_TIME_FORMAT
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
@@ -11,7 +9,7 @@ import random
 import json
 import os
 import time
-
+import threading
 
 load_dotenv("token.env")
 TOKEN = os.getenv("TOKEN")
